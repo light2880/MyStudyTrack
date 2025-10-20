@@ -1,57 +1,89 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import json
+import os
 
 st.set_page_config(page_title="MyStudyTrack", layout="wide")
-st.title("📚 MyStudyTrack - Suivi de mes notes")
+st.title("📚 MyStudyTrack - Suivi intelligent des notes")
 
 # ---------------------------
-# 1️⃣ Gestion des notes
+# 🔹 Chargement / sauvegarde des données
 # ---------------------------
-st.header("Mes notes")
+FICHIER = "notes.json"
 
+if os.path.exists(FICHIER):
+    with open(FICHIER, "r") as f:
+        notes_data = json.load(f)
+else:
+    notes_data = []
+
+# Stockage dans session_state pour garder les données pendant la session
 if 'notes' not in st.session_state:
-    st.session_state.notes = []
+    st.session_state.notes = notes_data
+
+# ---------------------------
+# 1️⃣ Ajouter une note
+# ---------------------------
+st.header("✏️ Ajouter une note")
 
 with st.form("ajout_note_unique"):
     matiere = st.text_input("Matière")
     note = st.number_input("Note obtenue", 0.0, 20.0)
     coef = st.number_input("Coefficient", 1, 10)
     submitted = st.form_submit_button("Ajouter la note")
+
     if submitted:
         if matiere:
-            st.session_state.notes.append((matiere, note, coef))
+            st.session_state.notes.append({"matiere": matiere, "note": note, "coef": coef})
+            with open(FICHIER, "w") as f:
+                json.dump(st.session_state.notes, f, indent=4)
             st.success(f"✅ Note ajoutée : {note}/20 en {matiere} (coef {coef})")
         else:
             st.error("⚠️ Merci d’indiquer une matière avant d’ajouter la note.")
 
-# --- Affichage des notes ---
+# ---------------------------
+# 2️⃣ Afficher les notes et moyennes
+# ---------------------------
+st.header("📖 Mes notes et moyennes")
+
 if st.session_state.notes:
-    df_notes = pd.DataFrame(st.session_state.notes, columns=["Matière", "Note", "Coefficient"])
+    df_notes = pd.DataFrame(st.session_state.notes)
     st.dataframe(df_notes, use_container_width=True)
 
-    # Moyenne pondérée
-    moyenne = (df_notes["Note"] * df_notes["Coefficient"]).sum() / df_notes["Coefficient"].sum()
-    st.subheader(f"📊 Moyenne générale : {moyenne:.2f}/20")
+    # Moyenne générale pondérée
+    moyenne_generale = (df_notes["note"] * df_notes["coef"]).sum() / df_notes["coef"].sum()
+    st.subheader(f"📊 Moyenne générale : {moyenne_generale:.2f}/20")
+
+    # Moyenne par matière
+    moyennes_matieres = df_notes.groupby("matiere").apply(
+        lambda x: (x["note"] * x["coef"]).sum() / x["coef"].sum()
+    )
+    st.write("### Moyenne par matière :")
+    for matiere, moyenne in moyennes_matieres.items():
+        emoji = "🟢" if moyenne >= 10 else "🔴"
+        st.write(f"{emoji} **{matiere}** → {moyenne:.2f}/20")
+
 else:
     st.info("Aucune note enregistrée pour l’instant.")
 
 # ---------------------------
-# 2️⃣ Graphiques d’évolution
+# 3️⃣ Graphiques d’évolution
 # ---------------------------
-st.header("📈 Graphiques d’évolution")
+st.header("📈 Graphiques de progression")
+
 if st.session_state.notes:
     fig, ax = plt.subplots()
-    df_notes.groupby("Matière")["Note"].mean().plot(kind="bar", ax=ax, color="#4e79a7", edgecolor="black")
+    moyennes_matieres.plot(kind="bar", ax=ax, color="#4e79a7", edgecolor="black")
     ax.set_ylim(0, 20)
     ax.set_ylabel("Note moyenne")
-    ax.set_title("Notes par matière")
+    ax.set_title("Moyenne par matière")
     st.pyplot(fig)
 else:
     st.warning("Ajoute d’abord des notes pour voir un graphique.")
 
 # ---------------------------
-# 3️⃣ Calculateur de rattrapage
+# 4️⃣ Calculateur de rattrapage
 # ---------------------------
 st.header("🎯 Calculateur de note pour atteindre la moyenne")
 
@@ -64,3 +96,5 @@ if st.button("Calculer la note à obtenir"):
     note_requise = (moyenne_cible * (coeff_actuelle + coeff_restante) - moyenne_actuelle * coeff_actuelle) / coeff_restante
     note_requise = max(0, min(note_requise, 20))
     st.success(f"🎯 Pour atteindre {moyenne_cible}/20, tu dois obtenir : **{note_requise:.2f}/20** à la prochaine évaluation.")
+
+
